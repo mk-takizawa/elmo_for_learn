@@ -634,8 +634,17 @@ constexpr s64 NodesPerIteration = 1000000; // 1回評価値を更新するのに
 void use_teacher(Position& pos, std::istringstream& ssCmd) {
     std::string teacherFileName;
     int threadNum;
+    // qh : 最初のskipsteps回については評価関数の更新を行わない。局面の数が少ないときは、
+    // skipstepsを大きくすることで学習を安定化させることができる
+    int skipsteps;
+    // qh : 100ステップに1回の保存で固定だと、少ない局面で学ばせる際に不便
+    int savesteps;
     ssCmd >> teacherFileName;
     ssCmd >> threadNum;
+    ssCmd >> skipsteps;
+    ssCmd >> savesteps;
+    // qh : 計算条件を標準出力させておかないと後々困ること多々
+    std::cout<<teacherFileName<<"(teacher)"<<skipsteps<<"(skipsteps)"<<savesteps<<"(savesteps)"<<std::endl;
     if (threadNum <= 0)
         exit(EXIT_FAILURE);
     std::vector<Searcher> searchers(threadNum);
@@ -738,6 +747,7 @@ void use_teacher(Position& pos, std::istringstream& ssCmd) {
     ifs.seekg(0, std::ios::beg); // ストリームポインタを先頭に戻す。
     const s64 MaxNodes = fileSize / sizeof(HuffmanCodedPosAndEval);
     std::atomic<s64> nodes; // 今回のイテレーションで読み込んだ学習局面数。
+    nodes = 0; // qh : 初期化をしておかないと環境によっては学習がスキップされる
     auto writeEval = [&] {
         // ファイル保存
         copyEval(*eval, *averagedEvalBase); // 平均化した物を整数の評価値にコピー
@@ -775,9 +785,9 @@ void use_teacher(Position& pos, std::istringstream& ssCmd) {
 
         updateEval(*evalBase, *lowerDimensionedEvaluatorGradient, *meanSquareOfLowerDimensionedEvaluatorGradient);
         averageEval(*averagedEvalBase, *evalBase); // 平均化する。
-        // if (iteration < 10) // 最初は値の変動が大きいので適当に変動させないでおく。tkzw:追加学習前提なので不要
-        //    memset(&(*evalBase), 0, sizeof(EvalBaseType));
-        if (iteration % 100 == 0 && iteration > 0) { // tkzw: iteration==0を除外
+        if (iteration < skipsteps) // 最初は値の変動が大きいので適当に変動させないでおく。tkzw:追加学習前提なので不要
+            memset(&(*evalBase), 0, sizeof(EvalBaseType));
+        if (iteration % savesteps == 0 && iteration > 0) { // tkzw: iteration==0を除外
             writeEval();
             writeSyn();
         }
